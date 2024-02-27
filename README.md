@@ -1,7 +1,5 @@
-# DebugManager
+# DebugManager(This repository is only to showcase the code. To use this tool properly, download the Unity Package file and import it into your project)
 Unity Custom Editor for DebugManager enhances Inspector with a user-friendly interface, enabling dynamic debug panel configuration and variable selection
-
-#This repository is only to showcase the code. To use this tool properly, download the Unity Package file and import it into your project.
 
 **Instructions**:
 - The "Demo" folder serves as an example and is not necessary for regular
