@@ -25,6 +25,8 @@ public class DebugManager : MonoBehaviour
         //Tabs
         [HideInInspector] public int currentTab;
 
+        public bool isShowing = true;
+
         #region Gizmo Lines
         //========== Lines ==========
         //Gizmo type
