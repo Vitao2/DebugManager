@@ -1,13 +1,11 @@
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 using System.Reflection;
-using static DebugManager.PanelConfiguration;
 using System.Linq;
-using Unity.VisualScripting.FullSerializer;
-using Unity.VisualScripting;
 using static DebugManager;
+using UnityEditor.Experimental.GraphView;
+using Unity.VisualScripting.FullSerializer;
 
 #if UNITY_EDITOR
 [CustomEditor(typeof(DebugManager))]
@@ -24,6 +22,9 @@ public class DebugEditor : Editor
     private List<string> scriptVariable = new List<string>();
     private List<int> selectedVariableIndex;
 
+    //Show each panel
+    private List<bool> isShowing;
+
     //Update real time the panels
     private void OnEnable()
     {
@@ -36,6 +37,9 @@ public class DebugEditor : Editor
         //Logo
         logoTexture = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/DebugManager/Icons/Icon.png");
 
+        //Create a list to show each panel configuration
+        isShowing = new List<bool>();
+
         //Create the variable index list
         selectedVariableIndex = new List<int>(debugManager.panelConfigurations.Count);
 
@@ -43,7 +47,7 @@ public class DebugEditor : Editor
         for (int i = 0; i < debugManager.panelConfigurations.Count; i++)
         {
             //add a visible panel
-            //isShowing.Add(true);
+            isShowing.Add(true);
 
             //add the selected index
             selectedVariableIndex.Add(debugManager.panelConfigurations[i].variableIndex);
@@ -72,7 +76,7 @@ public class DebugEditor : Editor
         base.OnInspectorGUI();
 
         debugManager = (DebugManager)target;
-    
+
         //========== Logo ==========
         GUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
@@ -89,21 +93,20 @@ public class DebugEditor : Editor
 
         if (Application.isPlaying)
         {
-            for (int i = 0; i < debugManager.panelConfigurations.Count; i++)
+            for (int i = 0; i < isShowing.Count; i++)
             {
-                debugManager.panelConfigurations[i].isShowing = true;
+                isShowing[i] = true;
             }
         }
-
         //========== Inspector Setup ==========
-        if (debugManager.panelConfigurations != null && debugManager.panelConfigurations.Count > 0)
-        {           
-            for (int i = 0; i < debugManager.panelConfigurations.Count; i++)
+        for (int i = 0; i < debugManager.panelConfigurations.Count; i++)
+        {
+            if (i >= 0 && i <= debugManager.panelConfigurations.Count)
             {
                 //Start the arrow drop
-                debugManager.panelConfigurations[i].isShowing = EditorGUILayout.BeginFoldoutHeaderGroup(debugManager.panelConfigurations[i].isShowing, $"Debug {i}");
+                isShowing[i] = EditorGUILayout.BeginFoldoutHeaderGroup(isShowing[i], $"Debug {i}");
 
-                if (debugManager.panelConfigurations[i].isShowing)
+                if (isShowing[i])
                 {
                     //Start box
                     EditorGUILayout.BeginVertical("box");
@@ -112,17 +115,16 @@ public class DebugEditor : Editor
                     string[] tabText = { "Panel", "Gizmo" };
                     debugManager.panelConfigurations[i].currentTab = GUILayout.Toolbar(debugManager.panelConfigurations[i].currentTab, tabText);
 
-                    if (i >= 0 && i < debugManager.panelConfigurations.Count)
+                    //If panel is selected
+                    if (debugManager.panelConfigurations[i].currentTab == 0)
                     {
-                        // Se o índice for válido, execute o código do painel ou gizmo
-                        if (debugManager.panelConfigurations[i].currentTab == 0)
-                        {
-                            Panel(debugManager, i);
-                        }
-                        else if (debugManager.panelConfigurations[i].currentTab == 1)
-                        {
-                            Lines(debugManager, i);
-                        }
+                        Panel(debugManager, i);
+                    }
+
+                    //if gizmo is selected
+                    if (debugManager.panelConfigurations[i].currentTab == 1)
+                    {
+                        Lines(debugManager, i);
                     }
 
                     //Gap
@@ -131,11 +133,11 @@ public class DebugEditor : Editor
                     //End box
                     EditorGUILayout.EndVertical();
                 }
-                //End the arrow drop
-                EditorGUILayout.EndFoldoutHeaderGroup();
             }
+
+            //End the arrow drop
+            EditorGUILayout.EndFoldoutHeaderGroup();
         }
-        
 
         //========== Button Field ==========
 
@@ -159,7 +161,7 @@ public class DebugEditor : Editor
         {
             CreateButton(debugManager);
         }
-        
+
 
         //Update the instance
         serializedObject.ApplyModifiedProperties();
@@ -170,7 +172,7 @@ public class DebugEditor : Editor
 
     //========== Methods ==========
 
-    //All panel setup
+    //Panel setup
     private void Panel(DebugManager debugManager, int i)
     {
         //Gap
@@ -202,23 +204,29 @@ public class DebugEditor : Editor
             debugManager.panelConfigurations[i].variable = (DebugManager.PanelConfiguration.Variable)EditorGUILayout.EnumPopup("Variable Type", debugManager.panelConfigurations[i].variable);
 
             //Method that saves the type of the variable
-            SaveTypeVariable(debugManager, i, true);
+            SaveTypeVariable(debugManager, i, true, true);
 
             //Variable
             DisplayScriptVariables(debugManager.panelConfigurations[i].script, debugManager.panelConfigurations[i].variable, out debugManager.panelConfigurations[i].scriptVariable, i);
 
             //Color
             EditorGUILayout.Space(5);
-            EditorGUILayout.LabelField("Color", EditorStyles.boldLabel);
-            debugManager.panelConfigurations[i].primaryColor = EditorGUILayout.ColorField("Primary Color(true): ", debugManager.panelConfigurations[i].primaryColor);
-            debugManager.panelConfigurations[i].secondaryColor = EditorGUILayout.ColorField("Secondary Color(false): ", debugManager.panelConfigurations[i].secondaryColor);
-
+            if (debugManager.panelConfigurations[i].plotGraph == false)
+            {
+                EditorGUILayout.LabelField("Color", EditorStyles.boldLabel);
+                debugManager.panelConfigurations[i].primaryColor = EditorGUILayout.ColorField("Primary Color(true): ", debugManager.panelConfigurations[i].primaryColor);
+                debugManager.panelConfigurations[i].secondaryColor = EditorGUILayout.ColorField("Secondary Color(false): ", debugManager.panelConfigurations[i].secondaryColor);
+            }
         }
         //End horizontal gap
         EditorGUI.indentLevel--;
-        
-        //Remove this panel
-        RemoveButton(debugManager, i);
+
+        //for the last panel
+        if (i != debugManager.panelConfigurations.Count - 1)
+        {
+            //Remove this panel
+            RemoveButton(debugManager, i);
+        }
     }
 
     //Line Gizmo setup
@@ -230,7 +238,7 @@ public class DebugEditor : Editor
         EditorGUI.indentLevel++;
 
         //========== Gizmo Type ==========
-        
+
         //Select the type of gizmo title
         debugManager.panelConfigurations[i].gizmoType = (DebugManager.PanelConfiguration.GizmoType)EditorGUILayout.EnumPopup("Gizmo Type", debugManager.panelConfigurations[i].gizmoType);
         //save the selected type
@@ -275,7 +283,7 @@ public class DebugEditor : Editor
                 debugManager.panelConfigurations[i].floats = true;
 
                 //Method that saves the type of the variable
-                SaveTypeVariable(debugManager, i, false);
+                SaveTypeVariable(debugManager, i, false, false);
 
                 //Method that shows the variables avaliables
                 DisplayScriptVariables(debugManager.panelConfigurations[i].script, debugManager.panelConfigurations[i].variable, out debugManager.panelConfigurations[i].scriptVariable, i);
@@ -297,7 +305,7 @@ public class DebugEditor : Editor
                 //create a slider
                 debugManager.panelConfigurations[i].gizmoScale = EditorGUILayout.Slider("Scale: ", debugManager.panelConfigurations[i].gizmoScale, 0.1f, 100);
             }
-            
+
         }
 
         //if is a line
@@ -308,7 +316,7 @@ public class DebugEditor : Editor
         }
 
 
-       
+
         //space gap
         EditorGUILayout.Space(5);
 
@@ -322,8 +330,8 @@ public class DebugEditor : Editor
         {
             //Direction to which the line will be point
             debugManager.panelConfigurations[i].direction = (Transform)EditorGUILayout.ObjectField("Direction: ", debugManager.panelConfigurations[i].direction, typeof(Transform), true);
-        }      
-        
+        }
+
         //Offset to adjust the line
         debugManager.panelConfigurations[i].offSet = EditorGUILayout.Vector3Field("Offset: ", debugManager.panelConfigurations[i].offSet);
 
@@ -338,11 +346,16 @@ public class DebugEditor : Editor
         CollisionGizmo(debugManager, i);
 
         //end horizontal gap
-        EditorGUI.indentLevel--;      
+        EditorGUI.indentLevel--;
 
-        //Remove this gizmo
-        RemoveButton(debugManager, i);
+        //for the last panel
+        if (i != debugManager.panelConfigurations.Count - 1)
+        {
+            //Remove this panel
+            RemoveButton(debugManager, i);
+        }
     }
+
 
     //Collision method
     private void CollisionGizmo(DebugManager debugManager, int i)
@@ -363,13 +376,13 @@ public class DebugEditor : Editor
 
             //Style
             EditorGUILayout.LabelField("Style", EditorStyles.boldLabel);
-            
+
             //Primary color
             debugManager.panelConfigurations[i].gizmoPrimaryColor = EditorGUILayout.ColorField("True color", debugManager.panelConfigurations[i].gizmoPrimaryColor);
 
             //Secondary color
             debugManager.panelConfigurations[i].gizmoSecondaryColor = EditorGUILayout.ColorField("False color", debugManager.panelConfigurations[i].gizmoSecondaryColor);
-           
+
         }
     }
 
@@ -381,32 +394,35 @@ public class DebugEditor : Editor
         if (GUILayout.Button("Add"))
         {
             //Create a hollow pane
-            DebugManager.PanelConfiguration newPanel = new DebugManager.PanelConfiguration();
+            PanelConfiguration newPanel = new PanelConfiguration();
 
             //add the hollow panel to the list
             debugManager.panelConfigurations.Add(newPanel);
 
-            //isShowing.Add(true);
+            isShowing.Add(true);
             selectedVariableIndex.Add(0);
         }
     }
     //Remove
     public void RemoveButton(DebugManager debugManager, int i)
     {
+        //Optimization
+        PanelConfiguration config = debugManager.panelConfigurations[i];
+
         //Remove Item
         if (debugManager.panelConfigurations.Count > 0)
         {
             if (GUILayout.Button("Remove", GUILayout.Width(100)))
             {
                 //Variables
-                string objectToRemove;               
+                string objectToRemove;
                 GameObject toDestroy;
 
-                //if is a panel
-                if (debugManager.panelConfigurations[i].currentTab == 0)
+                //if it is a panel
+                if (config.currentTab == 0)
                 {
                     //Removing the game object deleted panel 
-                    objectToRemove = debugManager.panelConfigurations[i].objectName + " Panel";
+                    objectToRemove = config.objectName + " Panel";
 
                     toDestroy = GameObject.Find(objectToRemove);
 
@@ -416,10 +432,10 @@ public class DebugEditor : Editor
                     }
                 }
                 //if is a gizmo
-                else if(debugManager.panelConfigurations[i].currentTab == 1)
+                else
                 {
                     //Removing the game object collider
-                    objectToRemove = debugManager.panelConfigurations[i].objectName + " Collider";
+                    objectToRemove = config.objectName + " Collider";
 
                     toDestroy = GameObject.Find(objectToRemove);
 
@@ -428,11 +444,11 @@ public class DebugEditor : Editor
                         DestroyImmediate(toDestroy);
                     }
                 }
-                
-                //Removing the last panel
-                debugManager.panelConfigurations.Remove(debugManager.panelConfigurations[i]);
 
-                //isShowing.Remove(isShowing[i]);
+                //Removing the last panel
+                debugManager.panelConfigurations.Remove(config);
+
+                isShowing.Remove(isShowing[i]);
                 selectedVariableIndex.Remove(selectedVariableIndex[i]);
             }
         }
@@ -441,33 +457,58 @@ public class DebugEditor : Editor
     private void RemoveLastButton(DebugManager debugManager)
     {
         //Remove Item
-        if (debugManager.panelConfigurations.Count > 0 && GUILayout.Button("Remove last"))
+        if (debugManager.panelConfigurations.Count > 0)
         {
-            //Removing the game object deleted panel 
-            string objectToRemove = debugManager.panelConfigurations[debugManager.panelConfigurations.Count - 1].objectName + " Panel";
-
-            GameObject toDestroy = GameObject.Find(objectToRemove);
-
-            if (toDestroy != null)
+            if (GUILayout.Button("Remove last"))
             {
-                DestroyImmediate(toDestroy);
+                //Variables
+                string objectToRemove;
+                GameObject toDestroy;
+
+                //Optimization
+                PanelConfiguration config = debugManager.panelConfigurations[debugManager.panelConfigurations.Count - 1];
+
+                if (config.currentTab == 0)
+                {
+                    //Removing the game object deleted panel 
+                    objectToRemove = config.objectName + " Panel";
+
+                    toDestroy = GameObject.Find(objectToRemove);
+
+                    if (toDestroy != null)
+                    {
+                        DestroyImmediate(toDestroy);
+                    }
+                }
+                else
+                {
+                    //Removing the game object collider
+                    objectToRemove = config.objectName + " Collider";
+
+                    toDestroy = GameObject.Find(objectToRemove);
+
+                    if (toDestroy != null)
+                    {
+                        DestroyImmediate(toDestroy);
+                    }
+                }
+
+                //Removing the last panel
+                debugManager.panelConfigurations.RemoveAt(debugManager.panelConfigurations.Count - 1);
+
+                isShowing.RemoveAt(isShowing.Count - 1);
+                selectedVariableIndex.RemoveAt(selectedVariableIndex.Count - 1);
             }
-
-            //Removing the last panel
-            debugManager.panelConfigurations.RemoveAt(debugManager.panelConfigurations.Count - 1);
-
-            //isShowing.RemoveAt(isShowing.Count - 1);
-            selectedVariableIndex.RemoveAt(selectedVariableIndex.Count - 1);
         }
     }
     //Clear all
     private void ClearButton(DebugManager debugManager)
     {
-        if(debugManager.panelConfigurations.Count > 1)
+        if (debugManager.panelConfigurations.Count > 1)
         {
             if (GUILayout.Button("Clear all"))
             {
-                for(int i = 0; i < debugManager.panelConfigurations.Count; i++)
+                for (int i = 0; i < debugManager.panelConfigurations.Count; i++)
                 {
                     //Removing the game object deleted panel 
                     string objectToRemove = debugManager.panelConfigurations[i].objectName + " Panel";
@@ -481,10 +522,10 @@ public class DebugEditor : Editor
                 }
 
                 debugManager.panelConfigurations.Clear();
-                //isShowing.Clear();
+                isShowing.Clear();
                 selectedVariableIndex.Clear();
             }
-        }    
+        }
 
     }
     //Create
@@ -495,28 +536,29 @@ public class DebugEditor : Editor
         {
             for (int i = 0; i < debugManager.panelConfigurations.Count; i++)
             {
-                GameObject copyObject = GameObject.Find(debugManager.panelConfigurations[i].objectName + " Panel");
+                PanelConfiguration config = debugManager.panelConfigurations[i];
 
-                if (copyObject != null && copyObject.name == debugManager.panelConfigurations[i].objectName + " Panel")
+                GameObject copyObject = GameObject.Find(config.objectName + " Panel");
+
+                if (copyObject != null && copyObject.name == config.objectName + " Panel")
                 {
-                    Debug.Log("The Object: " + copyObject.name + " Already exist");
+                    Debug.LogWarning("The Object: " + copyObject.name + " Already exist");
                     continue;
                 }
 
-                if (debugManager.panelConfigurations[i].currentTab == 0)
+                //if the current tab is a panel
+                if (config.currentTab == 0)
                 {
                     debugManager.CanvasSetup(i);
                 }
-                
+
             }
-
-
         }
     }
     //Save the selected variable type
-    private void SaveTypeVariable(DebugManager debugManager, int configurationIndex, bool interval)
+    private void SaveTypeVariable(DebugManager debugManager, int configurationIndex, bool interval, bool plotGraph)
     {
-        DebugManager.PanelConfiguration debugPanel = debugManager.panelConfigurations[configurationIndex];
+        PanelConfiguration debugPanel = debugManager.panelConfigurations[configurationIndex];
 
         if (debugPanel.script != null)
         {
@@ -572,21 +614,32 @@ public class DebugEditor : Editor
             debugPanel.transform = false;
         }
 
-        if((debugPanel.floats || debugPanel.integer) && interval)
+        if ((debugPanel.floats || debugPanel.integer))
         {
-            ShowInterval(debugManager, configurationIndex);
+
+            //if the user wants to set an interval
+            if (interval)
+            {
+                //Interval Method
+                ShowInterval(debugManager, configurationIndex);
+            }
+
+            if (plotGraph)
+            {
+                PlotGraph(debugManager, configurationIndex);
+            }
         }
 
         if (debugPanel.transform)
         {
             TransformCheckBox(debugManager, configurationIndex);
         }
-        
+
     }
     //Save the selected type of gizmo
     private void SaveTypeGizmo(DebugManager debugManager, int configurationIndex)
     {
-        DebugManager.PanelConfiguration debugPanel = debugManager.panelConfigurations[configurationIndex];
+        PanelConfiguration debugPanel = debugManager.panelConfigurations[configurationIndex];
 
         //Save the current type
         switch (debugPanel.gizmoType)
@@ -594,7 +647,7 @@ public class DebugEditor : Editor
             case DebugManager.PanelConfiguration.GizmoType.line:
                 debugPanel.isLine = true;
                 debugPanel.isCube = false;
-                debugPanel.isSphere = false;              
+                debugPanel.isSphere = false;
                 break;
             case DebugManager.PanelConfiguration.GizmoType.cube:
                 debugPanel.isLine = false;
@@ -614,10 +667,120 @@ public class DebugEditor : Editor
         }
 
     }
+    //Plot Graph setup
+    private void PlotGraph(DebugManager debugManager, int index)
+    {
+        // Optimization
+        PanelConfiguration debugPanel = debugManager.panelConfigurations[index];
+
+        debugPanel.plotGraph = EditorGUILayout.Toggle("Plot Graph", debugPanel.plotGraph);
+
+        // If the plot graph is visible
+        if (debugPanel.plotGraph)
+        {
+            // Title
+            EditorGUILayout.LabelField("Graph Setup", EditorStyles.boldLabel);
+
+            // Start indent level
+            EditorGUI.indentLevel++;
+
+            //Graph here...
+            debugPanel.graphScale = EditorGUILayout.Slider("Graph Scale %", debugPanel.graphScale, 1, 1000);
+            DrawGraph(debugPanel.xValues, debugPanel.yValues, debugPanel);
+
+            // ========== Graph time interval ==========
+            debugPanel.graphCustomInterval = EditorGUILayout.Toggle("Custom Interval", debugPanel.graphCustomInterval);
+
+            // Check if the user wants to use a custom interval
+            if (debugPanel.graphCustomInterval)
+            {
+                // Custom interval
+                debugPanel.graphInterval = EditorGUILayout.IntSlider("Graph update interval: ", (int)debugPanel.graphInterval, 1, 25);
+            }
+            else
+            {
+                //debugPanel.graphInterval = 1/60;
+                // Warning message
+                EditorGUILayout.HelpBox("If 'custom interval' is false, the update interval will be set by the frame rate.", MessageType.Warning);
+            }
+
+            // Color
+            EditorGUILayout.Space(5);
+            EditorGUILayout.LabelField("Color", EditorStyles.boldLabel);
+            debugPanel.primaryColor = EditorGUILayout.ColorField("Line color: ", debugManager.panelConfigurations[index].primaryColor);
+            debugPanel.secondaryColor = EditorGUILayout.ColorField("Background color: ", debugManager.panelConfigurations[index].secondaryColor);
+
+            // End indent level
+            EditorGUI.indentLevel--;
+        }
+    }
+
+    private void DrawGraph(List<float> xValues, List<float> yValues, PanelConfiguration config)
+    {
+        int GraphWidth = (int)(5 * config.graphScale);//Length of the math function
+        const int GraphHeight = 500;//Height of the math function
+        int Padding = 20;
+
+        GUILayout.Label("Graph", EditorStyles.boldLabel);
+
+        // Creating the rectangle to draw the graph
+        Rect graphRect = GUILayoutUtility.GetRect(GraphWidth, GraphHeight);
+        graphRect = EditorGUI.IndentedRect(graphRect);
+
+        // origin of y axle
+        float origin = graphRect.yMax - graphRect.height / 2;
+
+        // x axle:
+        Handles.DrawLine(new Vector3(graphRect.x, origin), new Vector3(graphRect.xMax, origin));//Line draw
+        EditorGUI.LabelField(new Rect(EditorGUIUtility.currentViewWidth - 85, (origin - Padding), 100, 20), "Seconds");//title
+
+        int xInterval = 50;
+
+        // creating the style marking
+        GUIStyle measureStyle = new GUIStyle(GUI.skin.label);
+        measureStyle.fontSize = 8; // font size
+
+        // for each space in view width
+        for (int i = 0; i <= (int)EditorGUIUtility.currentViewWidth; i++)
+        {
+            // calculate the position of the x marks
+            if (i % xInterval == 0 && i > 0)
+            {
+                // Drawing the lines
+                Handles.DrawLine(new Vector3(i, origin - 5), new Vector3(i, origin + 5));//X lines
+
+                // drawing the marks
+                EditorGUI.LabelField(new Rect(i, origin, 100, 20), string.Format("{0:F1}s", i), measureStyle);
+            }
+        }
+
+        // Drawing the Y axle
+        Handles.DrawLine(new Vector3(graphRect.x, graphRect.yMax), new Vector3(graphRect.x, graphRect.y));
+
+        // Graph Draw
+        Handles.color = Color.blue;
+        int numPoints = Mathf.Min(xValues.Count, yValues.Count); //make sure the smaller number doesn't exceed the larger one
+
+        Vector3[] points = new Vector3[numPoints];
+
+        float speed = 100;
+
+        for (int i = 0; i < numPoints; i++)
+        {
+            float variableScale = config.graphScale / ((float)config.scriptVariable + 1);
+            float x = graphRect.x + xValues[i];
+            float y = origin - (yValues[i] * (config.graphScale * variableScale / speed));
+
+            points[i] = new Vector3(x, y);
+        }
+        //Maximum treatment here...
+        Handles.DrawAAPolyLine(points);
+    }
+
     //Method that shows a interval checkbox
     private void ShowInterval(DebugManager debugManager, int configurationIndex)
     {
-        DebugManager.PanelConfiguration debugPanel = debugManager.panelConfigurations[configurationIndex];
+        PanelConfiguration debugPanel = debugManager.panelConfigurations[configurationIndex];
 
         //========= Interval of the float value =========
         //Show the interval checkbox if the script variable is a float
@@ -641,7 +804,7 @@ public class DebugEditor : Editor
             {
                 debugPanel.minNumber = EditorGUILayout.IntField("Min Value", (int)debugPanel.minNumber);
                 debugPanel.maxNumber = EditorGUILayout.IntField("Max Value", (int)debugPanel.maxNumber);
-            }          
+            }
 
             //----- Range treatment -----
             //if the minimum is different from the maximum
@@ -671,7 +834,7 @@ public class DebugEditor : Editor
                 debugPanel.maxNumber = 1;
             }
         }
-    }    
+    }
     //create the transform treatment
     private void TransformCheckBox(DebugManager debugManager, int configurationIndex)
     {
@@ -746,16 +909,15 @@ public class DebugEditor : Editor
         //Adding the variables at the list
         foreach (var field in fields)
         {
-            if(IsVariableOfType(field, variableType))
+            if (IsVariableOfType(field, variableType))
             {
                 variableNames.Add(field.Name);
-            }         
+            }
         }
 
         // if there's at least one variable, create a popup field
         if (variableNames.Count > 0)
         {
-
             // Check if the variable is in a valid interval-
             selectedVariableIndex[i] = Mathf.Clamp(selectedVariableIndex[i], 0, variableNames.Count - 1);
 
@@ -764,7 +926,7 @@ public class DebugEditor : Editor
             // Show the popup with the available options
             selectedVariableIndex[i] = EditorGUILayout.Popup("Select Variable", selectedVariableIndex[i], variableNames.ToArray());
 
-            Debug.Log("Index: " + selectedVariableIndex[i]);
+            //("Index: " + selectedVariableIndex[i]);
 
             // Obtain the name of the selected variable
             string selectedVariableName = variableNames[selectedVariableIndex[i]];
@@ -782,8 +944,6 @@ public class DebugEditor : Editor
 
                     EditorGUILayout.LabelField(selectedVariableName, field.GetValue(script).ToString());
 
-                    Debug.Log("Selected: " + selectedVariableName + " Value: " + selectedVariableValue);
-
                     break;
                 }
             }
@@ -796,7 +956,7 @@ public class DebugEditor : Editor
     #endregion
 
     //Method that check the type of the variable
-    private bool IsVariableOfType(FieldInfo field, DebugManager.PanelConfiguration.Variable variableType)
+    public static bool IsVariableOfType(FieldInfo field, DebugManager.PanelConfiguration.Variable variableType)
     {
         switch (variableType)
         {
@@ -836,19 +996,22 @@ public class DebugManagerSelection : MonoBehaviour
             DebugManager[] debugManagers = FindObjectsOfType<DebugManager>();
 
             //Update each debug manager panel
-            foreach(DebugManager debugManager in debugManagers)
+            foreach (DebugManager debugManager in debugManagers)
             {
                 if (debugManager != null)
                 {
                     // Select the GameObject of DebugManager
-                    Selection.activeGameObject = debugManager.gameObject;                  
+                    Selection.activeGameObject = debugManager.gameObject;
 
                 }
 
-                for(int i = 0; i < debugManager.panelConfigurations.Count; i++)
+                for (int i = 0; i < debugManager.panelConfigurations.Count; i++)
                 {
 
                     PanelConfiguration config = debugManager.panelConfigurations[i];
+
+                    config.xValues.Clear();
+                    config.yValues.Clear();
 
                     if (config.isCollision)
                     {
@@ -868,26 +1031,28 @@ public class DebugManagerSelection : MonoBehaviour
 
                         debugManager.CreateGameObject(startPosition, i);
                     }
-                    
+
                 }
-            }          
+            }
         }
-        else if(state == PlayModeStateChange.EnteredEditMode)
+        else if (state == PlayModeStateChange.EnteredEditMode)
         {
             //Variables
-            DebugManager debugManager = GameObject.Find("DebugManager").GetComponent<DebugManager>();           
+            DebugManager debugManager = GameObject.Find("DebugManager").GetComponent<DebugManager>();
             string objectToRemove;
             GameObject toDestroy;
+
+
 
             //Assign debugManager script to this game object
             if (debugManager != null)
             {
-                Debug.Log("DebugManager found");
-
-                if(debugManager.panelConfigurations.Count > 0)
+                if (debugManager.panelConfigurations.Count > 0)
                 {
-                    for(int i = 0; i < debugManager.panelConfigurations.Count; i++)
+                    for (int i = 0; i < debugManager.panelConfigurations.Count; i++)
                     {
+                        PanelConfiguration debugPanel = debugManager.panelConfigurations[i];
+
                         //Removing the game object collider
                         objectToRemove = debugManager.panelConfigurations[i].objectName + " Collider";
 
@@ -897,14 +1062,9 @@ public class DebugManagerSelection : MonoBehaviour
                         {
                             DestroyImmediate(toDestroy);
                         }
-                    }                    
+                    }
                 }
-               
-            }
-            else
-            {
-                Debug.LogError("DebugManager not found");
-                Debug.LogError("Change the DebugManager prefab's name to 'DebugManager'");
+
             }
         }
     }
