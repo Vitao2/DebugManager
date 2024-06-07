@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
@@ -5,6 +6,7 @@ using TMPro;
 using Unity.VisualScripting;
 using Unity.VisualScripting.Antlr3.Runtime.Tree;
 using Unity.VisualScripting.FullSerializer;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -25,7 +27,14 @@ public class DebugManager : MonoBehaviour
         //Tabs
         [HideInInspector] public int currentTab;
 
-        public bool isShowing = true;
+        #region Graph
+        public bool graphCustomInterval;//custom interval toggle variabel
+        public float graphInterval = 1;//interval in which the graph will update
+        public float counter = 0;//interval counter
+        public List<float> xValues = new List<float>();//time values
+        public List<float> yValues = new List<float>();//script values
+        public float graphScale = 100;
+        #endregion
 
         #region Gizmo Lines
         //========== Lines ==========
@@ -74,7 +83,7 @@ public class DebugManager : MonoBehaviour
         public string objectName;
         [Header("Text")]
         public Color textColor = Color.black;
-        public float fontSize = 40;
+        public float fontSize = 20;
         [Header("Variables")]
 
         //Scripts
@@ -90,7 +99,7 @@ public class DebugManager : MonoBehaviour
         [HideInInspector] public bool boolean, floats, integer, strings, transform;
 
         //Float
-        [HideInInspector] public bool interval;
+        [HideInInspector] public bool interval, plotGraph;//check an interval || set a graph 
         [HideInInspector] public float minNumber = 0, maxNumber = 1;
 
         //Transform
@@ -112,7 +121,7 @@ public class DebugManager : MonoBehaviour
     {
         if (configurationIndex < 0 || configurationIndex >= panelConfigurations.Count)
         {
-            Debug.Log("Invalid configuration index");
+            //Invalid configuration index
             return;
         }
 
@@ -129,7 +138,7 @@ public class DebugManager : MonoBehaviour
         {
             // Creating game object
             config.myGO = new GameObject();
-            config.myGO.name = canvasName;
+            config.myGO.name = "Canvas";
             config.myGO.AddComponent<Canvas>();
             // Creating canvas
             Canvas myCanvas = config.myGO.GetComponent<Canvas>();
@@ -140,8 +149,6 @@ public class DebugManager : MonoBehaviour
         }
         else
         {
-            //Debug Message
-            Debug.LogWarning("There's already an existing Canvas");
             // Assigning the existing Canvas to the MyGO game object
             config.myGO = existingCanvas.gameObject;
         }
@@ -179,13 +186,23 @@ public class DebugManager : MonoBehaviour
 
         // image settings
         config.myImage = config.panel.GetComponent<Image>();
-        config.myImage.color = config.primaryColor;
+        if (config.plotGraph)
+            config.myImage.color = config.secondaryColor;
+        else
+            config.myImage.color = config.primaryColor;
 
 
         //========== Text ==========
         config.myText = new GameObject();
         config.myText.transform.parent = config.panel.transform;
-        config.myText.name = config.objectName + " Text";
+        if (config.plotGraph)
+        {
+            config.myText.name = config.objectName + " Graph";
+        }
+        else
+        {
+            config.myText.name = config.objectName + " Text";
+        }
         config.myText.AddComponent<TextMeshProUGUI>();
         config.text = config.myText.GetComponent<TextMeshProUGUI>();
         config.text.text = config.objectName;
@@ -211,19 +228,81 @@ public class DebugManager : MonoBehaviour
 
         for (int configurationIndex = 0; configurationIndex < panelConfigurations.Count; configurationIndex++)
         {
-            //if is a line and the panel is set to gizmo
-            if (panelConfigurations[configurationIndex].isLine && panelConfigurations[configurationIndex].currentTab == 1)
+            PanelConfiguration config = panelConfigurations[configurationIndex];
+
+            if (config != null)
             {
-                DrawLines(configurationIndex);
+                UpdateVariables(config.script, config.variable, out config.scriptVariable, configurationIndex);
+
+                //if is a line and the panel is set to gizmo
+                if (config.isLine && config.currentTab == 1)
+                {
+                    DrawLines(configurationIndex);
+                }
             }
-            
+        }
+    }
+
+    //Update Variables Method
+    private void UpdateVariables(MonoBehaviour script, PanelConfiguration.Variable variableType, out object selectedVariableValue, int i)
+    {
+        selectedVariableValue = null;
+
+        // if the script is null
+        if (script == null)
+        {
+            //exit
+            return;
+        }
+
+        //Get the variable properties
+        System.Type scriptType = script.GetType();
+        var fields = scriptType.GetFields();
+        var properties = scriptType.GetProperties();
+
+        // Create a list to store the variables
+        List<string> variableNames = new List<string>();
+
+        //Adding the variables at the list
+        foreach (var field in fields)
+        {
+            if (DebugEditor.IsVariableOfType(field, variableType))
+            {
+                variableNames.Add(field.Name);
+            }
+        }
+
+        // if there's at least one variable, create a popup field
+        if (variableNames.Count > 0)
+        {
+            int selectedVariableIndex = panelConfigurations[i].variableIndex;
+
+            // Check if the variable is in a valid interval-
+            selectedVariableIndex = Mathf.Clamp(selectedVariableIndex, 0, variableNames.Count - 1);
+
+            // Obtain the name of the selected variable
+            string selectedVariableName = variableNames[selectedVariableIndex];
+
+            // Show the value of the selected variable
+            foreach (var field in fields)
+            {
+                if (field.Name == selectedVariableName)
+                {
+                    //save the variable selected
+                    selectedVariableValue = field.GetValue(script);
+
+                    //saving index in Debug manager script
+                    panelConfigurations[i].variableIndex = selectedVariableIndex;
+                    break;
+                }
+            }
         }
     }
 
     //Gizmo update
     private void OnDrawGizmos()
     {
-        for(int i = 0; i < panelConfigurations.Count; i++)
+        for (int i = 0; i < panelConfigurations.Count; i++)
         {
             if (panelConfigurations[i].currentTab == 1)
             {
@@ -237,9 +316,9 @@ public class DebugManager : MonoBehaviour
                     DrawSphere(i);
                 }
             }
-        
+
         }
-        
+
     }
 
     //Draw line Method
@@ -254,13 +333,13 @@ public class DebugManager : MonoBehaviour
         if (config.currentTab == 1)
         {
             //check if the origin isn't null
-            if(config.origin != null)
+            if (config.origin != null)
             {
                 //Saving the end point location
                 startPoint = config.origin.position + config.offSet;
 
                 //if the direction was set
-                if(config.direction != null)
+                if (config.direction != null)
                 {
                     endPoint = startPoint - config.direction.forward * config.gizmoScale;
                 }
@@ -271,14 +350,10 @@ public class DebugManager : MonoBehaviour
                 }
 
                 config.lineDuration = (config.lineAmount - 1) * Time.deltaTime;
-                
+
                 //Draw the lines
                 Debug.DrawLine(startPoint, endPoint, config.gizmoCurrentColor, config.lineDuration);
 
-            }
-            else
-            {
-                Debug.LogWarning("Line origin is null");
             }
         }
     }
@@ -287,14 +362,14 @@ public class DebugManager : MonoBehaviour
     private void DrawCube(int configurationIndex)
     {
         //Panel class reference
-        PanelConfiguration config = panelConfigurations[configurationIndex];    
+        PanelConfiguration config = panelConfigurations[configurationIndex];
 
         //Gizmo setup
-        Gizmos.color = config.gizmoCurrentColor;       
+        Gizmos.color = config.gizmoCurrentColor;
 
         //initial position;
         Vector3 startPosition;
-       
+
         //Check if there's a transform variable
         if (config.origin != null)
         {
@@ -341,7 +416,7 @@ public class DebugManager : MonoBehaviour
         }
 
         if (config.isWire)
-        {           
+        {
             Gizmos.DrawWireSphere(startPosition, config.gizmoScale * 0.05f);
         }
         else
@@ -377,7 +452,7 @@ public class DebugManager : MonoBehaviour
             collider.isTrigger = true;
             collider.transform.localScale = Vector3.one * (config.gizmoScale * 0.05f);
         }
-        else if(config.isSphere)
+        else if (config.isSphere)
         {
             SphereCollider collider = newGameObject.AddComponent<SphereCollider>();
             collider.isTrigger = true;
@@ -393,20 +468,21 @@ public class DebugManager : MonoBehaviour
     //========== Main Method ==========
     private void UpdatePanel()
     {
-        for(int configurationIndex = 0; configurationIndex < panelConfigurations.Count; configurationIndex++)
+        for (int configurationIndex = 0; configurationIndex < panelConfigurations.Count; configurationIndex++)
         {
             PanelConfiguration config = panelConfigurations[configurationIndex];
 
             //check if the variable and the image panel isn't null 
             if (config.scriptVariable != null && config.myImage != null && config.currentTab == 0)
             {
-                print("Value: " + config.scriptVariable);
-                UpdateBool(configurationIndex);
-                UpdateInt(configurationIndex);
-                UpdateFloat(configurationIndex);
-                UpdateString(configurationIndex);
-                UpdateTransform(configurationIndex);
-                
+
+                //print("Value: " + config.scriptVariable);
+                UpdateBool(configurationIndex);//bool update
+                UpdateInt(configurationIndex);//int update
+                UpdateFloat(configurationIndex);//float update
+                UpdateString(configurationIndex);//string update
+                UpdateTransform(configurationIndex);//transform update
+
             }
         }
     }
@@ -426,7 +502,7 @@ public class DebugManager : MonoBehaviour
             {
                 config.myImage.color = config.secondaryColor;
             }
-        }   
+        }
     }
 
     //========== Int Treatment ==========
@@ -463,7 +539,7 @@ public class DebugManager : MonoBehaviour
             {
                 print("Text is null");
             }
-            
+
         }
     }
 
@@ -473,17 +549,24 @@ public class DebugManager : MonoBehaviour
         PanelConfiguration config = panelConfigurations[configurationIndex];
 
         //If the type of the variable is float
-        if(config.scriptVariable.GetType() == typeof(float))
+        if (config.scriptVariable.GetType() == typeof(float))
         {
             //save the variable value
             float value = (float)config.scriptVariable;
 
             //check is the text isn't null
-            if(config.text != null)
+            if (config.text != null)
             {
                 //change the panel text to the variable value text
                 config.text.text = config.objectName + ": " + ((float)config.scriptVariable).ToString("F2");
-                
+
+                //if the plot graph option is true
+                if (config.plotGraph)
+                {
+                    //Update Plot Graph method
+                    UpdatePlotGraph(config.xValues, config.yValues, value, configurationIndex);
+                }
+
                 //if the interval is true
                 if (config.interval)
                 {
@@ -499,11 +582,11 @@ public class DebugManager : MonoBehaviour
                         config.myImage.color = config.secondaryColor;
                     }
                 }
-                
+
             }
             else
             {
-                print("Text is null");
+                //print("Text is null");
             }
         }
     }
@@ -513,10 +596,10 @@ public class DebugManager : MonoBehaviour
         PanelConfiguration config = panelConfigurations[configurationIndex];
 
         //If the type of the variable is float
-        if(config.scriptVariable.GetType() == typeof(string))
+        if (config.scriptVariable.GetType() == typeof(string))
         {
             //check if the text isn't null
-            if(config.text != null)
+            if (config.text != null)
             {
                 config.text.text = config.objectName + ": " + config.scriptVariable.ToString();
             }
@@ -529,7 +612,7 @@ public class DebugManager : MonoBehaviour
         PanelConfiguration config = panelConfigurations[configurationIndex];
 
         //If the type of the variable is float
-        if(config.scriptVariable.GetType() == typeof(Transform))
+        if (config.scriptVariable.GetType() == typeof(Transform))
         {
             //check if the text isn't null
             if (config.text != null)
@@ -548,14 +631,14 @@ public class DebugManager : MonoBehaviour
                     //change the panel text to the variable value text
                     config.text.text = config.objectName + ": " + ((Transform)config.scriptVariable).rotation.ToString();
                 }
-                
+
                 //Scale
                 if (config.scale)
                 {
                     //change the panel text to the variable value text
                     config.text.text = config.objectName + ": " + ((Transform)config.scriptVariable).localScale.ToString();
                 }
-                               
+
             }
             else
             {
@@ -564,6 +647,66 @@ public class DebugManager : MonoBehaviour
         }
 
     }
+
+    //========== Graph Treatment ==========
+    private void UpdatePlotGraph(List<float> xValues, List<float> yValues, float scriptValue, int configurationIndex)
+    {
+        //Optimization
+        PanelConfiguration config = panelConfigurations[configurationIndex];
+
+        //Debug
+        for (int i = 0; i < xValues.Count; i++)
+        {
+            //print(xValues[i]);
+        }
+
+        //========== Updating Y values ==========
+        if (config.graphCustomInterval)//if the user set a custom interval
+        {
+            //========== Updating X values ==========
+            float insert = Mathf.Round(Time.time);
+
+            //waiting for this interval
+            if (WaitTime(config, config.graphInterval))
+            {
+                xValues.Add(insert);
+
+                //adding the script value
+                yValues.Add(scriptValue);
+            }
+        }
+        else//update at a frame rate
+        {
+            config.graphInterval = Time.deltaTime;
+
+            //========== Updating X values ==========
+            float insert = Time.time;
+
+            //waiting for this interval
+            if (WaitTime(config, config.graphInterval))
+            {
+                xValues.Add(insert);
+                //adding the script value
+                yValues.Add(scriptValue);
+            }
+        }
+    }
+
+    private bool WaitTime(PanelConfiguration config, float timeToWait)
+    {
+        config.counter += Time.deltaTime;
+
+        if (config.counter >= timeToWait)
+        {
+            config.counter = 0;
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
     #endregion
     #endregion
 }
